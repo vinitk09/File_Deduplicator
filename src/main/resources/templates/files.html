@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>File Deduplicator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --danger-color: #dc3545;
+            --light-gray: #f8f9fa;
+            --medium-gray: #e9ecef;
+            --dark-gray: #6c757d;
+            --text-color: #212529;
+            --border-radius: 0.5rem;
+            --success-color: #198754;
+            --info-color: #0dcaf0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--light-gray);
+            color: var(--text-color);
+        }
+
+        .navbar {
+            box-shadow: 0 2px 4px rgba(0,0,0,.04);
+        }
+
+        .file-item {
+            padding: 1rem 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.2s ease;
+            border-bottom: 1px solid var(--medium-gray);
+        }
+
+        .file-item:hover {
+            background-color: rgba(0,0,0,0.02);
+        }
+
+        .duplicate-group {
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--medium-gray);
+            border-radius: var(--border-radius);
+            background-color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .group-header {
+            padding: 0.75rem 1.25rem;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid var(--medium-gray);
+        }
+
+        .file-path {
+            word-break: break-all;
+            margin-left: 0.75rem;
+        }
+
+        .category-badge {
+            font-size: 0.75rem;
+            padding: 0.35em 0.65em;
+            margin-left: 0.5rem;
+            font-weight: 500;
+        }
+
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1100;
+        }
+
+        .btn-icon {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .serial-number {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--medium-gray);
+            border-radius: 50%;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        /* Reporting Section Styles */
+        .report-section {
+            margin-top: 2rem;
+            background-color: white;
+            border-radius: var(--border-radius);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+        }
+
+        .report-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .report-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .log-container {
+            max-height: 300px;
+            overflow-y: auto;
+            background-color: #f8f9fa;
+            border-radius: var(--border-radius);
+            padding: 1rem;
+            margin-bottom: 1rem;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+
+        .log-entry {
+            padding: 0.25rem 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .log-timestamp {
+            color: var(--dark-gray);
+            margin-right: 0.5rem;
+        }
+
+        .log-message {
+            color: var(--text-color);
+        }
+
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-card {
+            background-color: white;
+            border-radius: var(--border-radius);
+            padding: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-label {
+            color: var(--dark-gray);
+            font-size: 0.85rem;
+        }
+
+        .bg-success {
+            background-color: var(--success-color) !important;
+        }
+
+        .bg-danger {
+            background-color: var(--danger-color) !important;
+        }
+
+        .bg-info {
+            background-color: var(--info-color) !important;
+        }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-light bg-white mb-4 shadow-sm">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="#">
+            <i class="fas fa-copy me-2"></i>
+            File Deduplicator
+        </a>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0">Duplicate Groups</h1>
+        <div>
+            <button class="btn btn-primary btn-icon me-2" data-bs-toggle="modal" data-bs-target="#ruleModal">
+                <i class="fas fa-plus"></i>
+                Add Rule
+            </button>
+            <button id="refreshBtn" class="btn btn-outline-secondary btn-icon">
+                <i class="fas fa-sync-alt"></i>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <div th:if="${#maps.isEmpty(duplicateGroups)}" class="alert alert-success text-center">
+        <i class="fas fa-check-circle me-2"></i> No duplicate files found! Your workspace is clean.
+    </div>
+
+    <div th:each="group : ${duplicateGroups}" class="duplicate-group">
+        <div class="group-header">
+            <h6 class="mb-0">Duplicate Group <small class="text-muted">(Hash: [[${group.key}]])</small></h6>
+        </div>
+        <div class="list-group list-group-flush">
+            <div th:each="file, iterStat : ${group.value}" class="list-group-item file-item" th:data-path="${file.path}">
+                <div class="d-flex align-items-center">
+                    <div class="serial-number">[[${iterStat.count}]]</div>
+                    <div class="file-path">
+                        [[${file.path}]]
+                        <span class="badge rounded-pill category-badge"
+                              th:classappend="${'bg-' + (
+                                file.category == 'Documents' ? 'primary' :
+                                file.category == 'Images' ? 'success' :
+                                file.category == 'Videos' ? 'info' :
+                                file.category == 'Audio' ? 'warning' :
+                                file.category == 'Archives' ? 'secondary' :
+                                file.category == 'Executables' ? 'danger' : 'dark'
+                              )}">
+                            [[${file.category}]]
+                        </span>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-danger btn-icon"
+                        th:attr="data-path=${file.path}" onclick="handleSingleDelete(this)">
+                    <i class="fas fa-trash"></i>
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reporting Section -->
+    <div class="report-section">
+        <div class="report-header">
+            <h2 class="h4 mb-0">Activity Log & Reports</h2>
+            <div class="report-actions">
+                <button id="generateReportBtn" class="btn btn-info btn-icon">
+                    <i class="fas fa-file-download"></i>
+                    Generate Report
+                </button>
+            </div>
+        </div>
+
+
+        <div class="stats-container">
+            <div class="stat-card">
+                <div class="stat-value" id="totalGroups">0</div>
+                <div class="stat-label">Duplicate Groups</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalFiles">0</div>
+                <div class="stat-label">Duplicate Files</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalCategories">0</div>
+                <div class="stat-label">Categories</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="lastScanTime">-</div>
+                <div class="stat-label">Last Scan</div>
+            </div>
+        </div>
+
+        <div class="log-container" id="activityLog">
+            <div class="text-center text-muted py-3">
+                <i class="fas fa-spinner fa-spin"></i> Loading activity log...
+            </div>
+        </div>
+
+        <div id="reportResult"></div>
+    </div>
+</div>
+
+<!-- Rule Management Modal -->
+<div class="modal fade" id="ruleModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Categorization Rule</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="ruleForm">
+                    <div class="mb-3">
+                        <label class="form-label">Rule Type</label>
+                        <select class="form-select" name="type" required>
+                            <option value="">Select a rule type</option>
+                            <option value="PATH_CONTAINS">Path Contains</option>
+                            <option value="FILE_EXTENSION">File Extension</option>
+                            <option value="FILE_NAME_REGEX">File Name (Regex)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Pattern / Keyword</label>
+                        <input type="text" class="form-control" name="pattern"
+                               placeholder="e.g., .pdf, /documents/, .*(report|summary).*" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Category Name</label>
+                        <input type="text" class="form-control" name="category"
+                               placeholder="e.g., PDF Files, Important Docs" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="submitRuleBtn">Add Rule</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Notifications -->
+<div class="toast-container">
+    <div id="notificationToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+            <strong class="me-auto" id="toast-title">Notification</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body" id="toast-message"></div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const toast = new bootstrap.Toast(document.getElementById('notificationToast'));
+        const ruleModal = new bootstrap.Modal(document.getElementById('ruleModal'));
+        const ruleForm = document.getElementById('ruleForm');
+        const submitRuleBtn = document.getElementById('submitRuleBtn');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const generateReportBtn = document.getElementById('generateReportBtn');
+        const activityLog = document.getElementById('activityLog');
+
+        // Initialize stats
+        updateStats();
+        loadActivityLogs();
+
+        // Refresh button
+        refreshBtn.addEventListener('click', () => {
+            refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+            location.reload();
+        });
+
+        // Generate report button
+        generateReportBtn.addEventListener('click', generateReport);
+
+        // Rule form submission
+        submitRuleBtn.addEventListener('click', addRule);
+
+        // Main functions
+        window.handleSingleDelete = function(button) {
+            const filePath = button.getAttribute('data-path');
+            if (confirm(`Are you sure you want to delete this file?\n${filePath}`)) {
+                performDeletion([filePath]);
+            }
+        };
+
+        async function performDeletion(filePaths) {
+            try {
+                const response = await fetch('/duplicates/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filesToDelete: filePaths })
+                });
+                const result = await response.json();
+
+                if (!response.ok) throw new Error(result.message || 'Deletion failed');
+
+                showToast(result.success ? 'Success' : 'Partial Success',
+                        result.message,
+                        result.success ? 'success' : 'warning');
+
+                if (result.deletedFiles?.length > 0) {
+                    removeFilesFromUI(result.deletedFiles);
+                    updateStats();
+                    loadActivityLogs();
+                }
+            } catch (error) {
+                showToast('Error', error.message, 'danger');
+            }
+        }
+
+        async function addRule() {
+            if (!ruleForm.checkValidity()) {
+                ruleForm.classList.add('was-validated');
+                return;
+            }
+
+            const formData = new FormData(ruleForm);
+            const rule = {
+                type: formData.get('type'),
+                pattern: formData.get('pattern'),
+                category: formData.get('category')
+            };
+
+            submitRuleBtn.disabled = true;
+            submitRuleBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Adding...';
+
+            try {
+                const response = await fetch('/duplicates/rules', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(rule)
+                });
+                const result = await response.json();
+
+                if (!response.ok) throw new Error(result.message || 'Failed to add rule');
+
+                showToast('Success', `Rule added for ${rule.category}`, 'success');
+                ruleModal.hide();
+                ruleForm.reset();
+                ruleForm.classList.remove('was-validated');
+
+                // Refresh to apply new rules
+                setTimeout(() => location.reload(), 1000);
+            } catch (error) {
+                showToast('Error', error.message, 'danger');
+            } finally {
+                submitRuleBtn.disabled = false;
+                submitRuleBtn.innerHTML = 'Add Rule';
+            }
+        }
+
+        async function generateReport() {
+    generateReportBtn.disabled = true;
+    generateReportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+
+    try {
+        const response = await fetch('/duplicates/report', {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to generate report');
+        }
+
+        const result = await response.json();
+
+        if (result.success) {
+            // Create a temporary link to trigger download
+            const downloadLink = document.createElement('a');
+            downloadLink.href = `/${result.reportPath}`;
+
+            // Extract filename from path
+            const filename = result.reportPath.split('/').pop();
+            downloadLink.download = filename;
+
+            // Trigger download
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+
+            showToast('Success', 'Report downloaded successfully', 'success');
+        } else {
+            throw new Error(result.message || 'Report generation failed');
+        }
+    } catch (error) {
+        document.getElementById('reportResult').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i> ${error.message}
+            </div>
+        `;
+        showToast('Error', error.message, 'danger');
+    } finally {
+        generateReportBtn.disabled = false;
+        generateReportBtn.innerHTML = '<i class="fas fa-file-download"></i> Generate Report';
+    }
+}
+        async function loadActivityLogs() {
+            try {
+                const response = await fetch('/duplicates/logs');
+                if (!response.ok) {
+                    throw new Error('Failed to load activity logs');
+                }
+
+                const logs = await response.json();
+                activityLog.innerHTML = logs.map(log => {
+                    // Split timestamp and message
+                    const parts = log.split('] ');
+                    const timestamp = parts[0].substring(1);
+                    const message = parts.slice(1).join('] ');
+
+                    return `
+                        <div class="log-entry">
+                            <span class="log-timestamp">[${timestamp}]</span>
+                            <span class="log-message">${message}</span>
+                        </div>
+                    `;
+                }).join('');
+
+                // Auto-scroll to bottom
+                activityLog.scrollTop = activityLog.scrollHeight;
+            } catch (error) {
+                activityLog.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        function updateStats() {
+            const groups = document.querySelectorAll('.duplicate-group');
+            const files = document.querySelectorAll('.file-item');
+            const categories = new Set();
+
+            // Count unique categories
+            document.querySelectorAll('.category-badge').forEach(badge => {
+                categories.add(badge.textContent.trim());
+            });
+
+            document.getElementById('totalGroups').textContent = groups.length;
+            document.getElementById('totalFiles').textContent = files.length;
+            document.getElementById('totalCategories').textContent = categories.size;
+            document.getElementById('lastScanTime').textContent = new Date().toLocaleTimeString();
+        }
+
+        // UI Helpers
+        function removeFilesFromUI(deletedPaths) {
+            deletedPaths.forEach(path => {
+                const fileItem = document.querySelector(`.file-item[data-path="${path}"]`);
+                if (fileItem) {
+                    const group = fileItem.closest('.duplicate-group');
+                    fileItem.style.transition = 'all 0.3s ease';
+                    fileItem.style.opacity = '0';
+                    fileItem.style.height = '0';
+                    fileItem.style.padding = '0';
+                    fileItem.style.margin = '0';
+                    fileItem.style.border = '0';
+
+                    setTimeout(() => {
+                        fileItem.remove();
+                        // Remove group if it has less than 2 files remaining
+                        if (group && group.querySelectorAll('.file-item').length < 2) {
+                            group.style.transition = 'all 0.3s ease';
+                            group.style.opacity = '0';
+                            group.style.height = '0';
+                            setTimeout(() => group.remove(), 300);
+                        }
+                    }, 300);
+                }
+            });
+        }
+
+        function showToast(title, message, type = 'success') {
+            const toastEl = document.getElementById('notificationToast');
+            const toastTitle = document.getElementById('toast-title');
+            const toastBody = document.getElementById('toast-message');
+
+            toastEl.className = 'toast';
+            toastEl.classList.add('bg-' + type);
+
+            toastTitle.textContent = title;
+            toastBody.textContent = message;
+
+            const toast = new bootstrap.Toast(toastEl);
+            toast.show();
+        }
+    });
+</script>
+</body>
+</html>
